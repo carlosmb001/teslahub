@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TeslaHub</title>
+<style>
+  :root {
+    --bg: #0b0c0f;
+    --panel: #16181d;
+    --panel-hover: #1f2229;
+    --text: #f2f3f5;
+    --muted: #8b909a;
+    --accent: #3e8bff;
+    --star: #ffcc33;
+    --radius: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  body { padding: 28px 32px 48px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 34px; letter-spacing: -0.5px; }
+  #clock { font-size: 34px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  nav { display: flex; gap: 12px; margin: 24px 0; }
+  nav button {
+    flex: 1; max-width: 320px; padding: 22px; font-size: 24px; font-weight: 600;
+    border: 0; border-radius: var(--radius); background: var(--panel); color: var(--muted); cursor: pointer;
+  }
+  nav button[aria-selected="true"] { background: var(--accent); color: #fff; }
+
+  .note { color: var(--muted); font-size: 18px; margin: 0 0 20px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
+  .tile { position: relative; }
+  .tile a {
+    display: flex; flex-direction: column; justify-content: flex-end;
+    height: 150px; padding: 20px; border-radius: var(--radius);
+    background: var(--panel); color: var(--text); text-decoration: none;
+    border-top: 6px solid var(--brand);
+  }
+  .tile a:hover, .tile a:focus-visible { background: var(--panel-hover); outline: none; }
+  .tile .badge {
+    position: absolute; top: 20px; left: 20px; width: 52px; height: 52px; border-radius: 14px;
+    display: grid; place-items: center; font-size: 24px; font-weight: 800;
+    background: var(--brand); color: var(--brand-text, #fff); pointer-events: none;
+  }
+  .tile .name { font-size: 24px; font-weight: 700; }
+  .tile .kind { font-size: 16px; color: var(--muted); margin-top: 4px; }
+  .tile .fav {
+    position: absolute; top: 14px; right: 14px; width: 60px; height: 60px;
+    border: 0; border-radius: 50%; background: transparent; color: var(--muted);
+    font-size: 30px; cursor: pointer;
+  }
+  .tile .fav[aria-pressed="true"] { color: var(--star); }
+
+  @media (max-width: 600px) {
+    body { padding: 16px 16px 32px; }
+    h1, #clock { font-size: 26px; }
+    nav button { font-size: 20px; padding: 18px; }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .tile a { height: 130px; padding: 14px; }
+    .tile .badge { top: 14px; left: 14px; width: 44px; height: 44px; font-size: 20px; }
+    .tile .name { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>TeslaHub</h1>
+  <div id="clock"></div>
+</header>
+
+<nav role="tablist">
+  <button role="tab" data-tab="listen">🎧 Listen</button>
+  <button role="tab" data-tab="watch">📺 Watch</button>
+</nav>
+
+<p class="note" id="note"></p>
+<div class="grid" id="grid"></div>
+
+<script>
+  // kind: "listen" = audio, fine while driving; "watch" = video, Tesla only plays it in Park.
+  const SERVICES = [
+    { id: "spotify",    name: "Spotify",        kind: "listen", url: "https://open.spotify.com",            color: "#1db954", text: "#000" },
+    { id: "ytmusic",    name: "YouTube Music",  kind: "listen", url: "https://music.youtube.com",           color: "#ff0000" },
+    { id: "applemusic", name: "Apple Music",    kind: "listen", url: "https://music.apple.com",             color: "#fa2d48" },
+    { id: "amzmusic",   name: "Amazon Music",   kind: "listen", url: "https://music.amazon.com",            color: "#25d1da", text: "#000" },
+    { id: "pandora",    name: "Pandora",        kind: "listen", url: "https://www.pandora.com",             color: "#3668ff" },
+    { id: "siriusxm",   name: "SiriusXM",       kind: "listen", url: "https://www.siriusxm.com/player",     color: "#0000eb" },
+    { id: "tunein",     name: "TuneIn",         kind: "listen", url: "https://tunein.com",                  color: "#14d8cc", text: "#000" },
+    { id: "iheart",     name: "iHeartRadio",    kind: "listen", url: "https://www.iheart.com",              color: "#c6002b" },
+    { id: "audible",    name: "Audible",        kind: "listen", url: "https://www.audible.com/library",     color: "#f8991c", text: "#000" },
+    { id: "pocketcasts",name: "Pocket Casts",   kind: "listen", url: "https://play.pocketcasts.com",        color: "#f43e37" },
+    { id: "soundcloud", name: "SoundCloud",     kind: "listen", url: "https://soundcloud.com",              color: "#ff5500" },
+
+    { id: "netflix",    name: "Netflix",        kind: "watch",  url: "https://www.netflix.com",             color: "#e50914" },
+    { id: "disney",     name: "Disney+",        kind: "watch",  url: "https://www.disneyplus.com",          color: "#113ccf" },
+    { id: "hulu",       name: "Hulu",           kind: "watch",  url: "https://www.hulu.com",                color: "#1ce783", text: "#000" },
+    { id: "max",        name: "Max",            kind: "watch",  url: "https://play.max.com",                color: "#002be7" },
+    { id: "prime",      name: "Prime Video",    kind: "watch",  url: "https://www.amazon.com/gp/video/storefront", color: "#00a8e1", text: "#000" },
+    { id: "peacock",    name: "Peacock",        kind: "watch",  url: "https://www.peacocktv.com",           color: "#f4c430", text: "#000" },
+    { id: "paramount",  name: "Paramount+",     kind: "watch",  url: "https://www.paramountplus.com",       color: "#0064ff" },
+    { id: "appletv",    name: "Apple TV+",      kind: "watch",  url: "https://tv.apple.com",                color: "#555" },
+    { id: "youtube",    name: "YouTube",        kind: "watch",  url: "https://www.youtube.com",             color: "#ff0000" },
+    { id: "youtubetv",  name: "YouTube TV",     kind: "watch",  url: "https://tv.youtube.com",              color: "#cc0000" },
+    { id: "tubi",       name: "Tubi",           kind: "watch",  url: "https://tubitv.com",                  color: "#7408ff" },
+    { id: "pluto",      name: "Pluto TV",       kind: "watch",  url: "https://pluto.tv",                    color: "#fff200", text: "#000" },
+    { id: "roku",       name: "Roku Channel",   kind: "watch",  url: "https://therokuchannel.roku.com",     color: "#6c3c97" },
+    { id: "crunchyroll",name: "Crunchyroll",    kind: "watch",  url: "https://www.crunchyroll.com",         color: "#f47521" },
+    { id: "twitch",     name: "Twitch",         kind: "watch",  url: "https://www.twitch.tv",               color: "#9146ff" },
+    { id: "espn",       name: "ESPN",           kind: "watch",  url: "https://www.espn.com/watch",          color: "#d00" },
+    { id: "fubo",       name: "Fubo",           kind: "watch",  url: "https://www.fubo.tv",                 color: "#fa4616" },
+    { id: "sling",      name: "Sling TV",       kind: "watch",  url: "https://watch.sling.com",             color: "#0b8bd9" },
+    { id: "plex",       name: "Plex",           kind: "watch",  url: "https://app.plex.tv",                 color: "#e5a00d", text: "#000" },
+  ];
+
+  const NOTES = {
+    listen: "Audio apps — fine to use while driving. Use the steering wheel buttons to skip and pause.",
+    watch:  "Video apps — Tesla only plays video while in Park. Great for charging stops.",
+  };
+
+  // Per-device conveniences only; the page works fine if storage is unavailable.
+  const store = {
+    get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+    set(key, value)    { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} },
+  };
+
+  let tab = store.get("tab", "listen");
+  let favs = new Set(store.get("favs", []));
+
+  const grid = document.getElementById("grid");
+  const note = document.getElementById("note");
+  const tabs = document.querySelectorAll("nav button");
+
+  function render() {
+    tabs.forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+    note.textContent = NOTES[tab];
+
+    const list = SERVICES.filter(s => s.kind === tab)
+      .sort((a, b) => favs.has(b.id) - favs.has(a.id));
+
+    grid.innerHTML = list.map(s => `
+      <div class="tile" style="--brand:${s.color}; --brand-text:${s.text || "#fff"}">
+        <a href="${s.url}">
+          <span class="name">${s.name}</span>
+          <span class="kind">${s.kind === "listen" ? "Audio" : "Video · Park only"}</span>
+        </a>
+        <span class="badge">${s.name[0]}</span>
+        <button class="fav" data-id="${s.id}" aria-pressed="${favs.has(s.id)}"
+                aria-label="Favorite ${s.name}">${favs.has(s.id) ? "★" : "☆"}</button>
+      </div>`).join("");
+  }
+
+  tabs.forEach(b => b.addEventListener("click", () => {
+    tab = b.dataset.tab;
+    store.set("tab", tab);
+    render();
+  }));
+
+  grid.addEventListener("click", e => {
+    const btn = e.target.closest(".fav");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    favs.has(id) ? favs.delete(id) : favs.add(id);
+    store.set("favs", [...favs]);
+    render();
+  });
+
+  function tick() {
+    document.getElementById("clock").textContent =
+      new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  tick();
+  setInterval(tick, 10000);
+  render();
+</script>
+</body>
+</html>
