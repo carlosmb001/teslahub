@@ -13,6 +13,7 @@
     --muted: #8b909a;
     --accent: #3e8bff;
     --star: #ffcc33;
+    --warn: #ff9f43;
     --radius: 22px;
   }
   * { box-sizing: border-box; }
@@ -23,6 +24,37 @@
   header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 34px; letter-spacing: -0.5px; }
   #clock { font-size: 34px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Play-here bar */
+  #playForm { display: flex; gap: 12px; margin-top: 24px; }
+  #playInput {
+    flex: 1; min-width: 0; padding: 20px 22px; font-size: 22px; border-radius: var(--radius);
+    border: 2px solid transparent; background: var(--panel); color: var(--text);
+  }
+  #playInput:focus { outline: none; border-color: var(--accent); }
+  #playForm button, .btn {
+    padding: 20px 30px; font-size: 22px; font-weight: 700; border: 0; border-radius: var(--radius);
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .btn.secondary { background: var(--panel-hover); color: var(--text); }
+  #playError { color: var(--warn); font-size: 18px; margin: 10px 4px 0; min-height: 1em; }
+
+  /* Player */
+  #player { display: none; margin-top: 16px; background: var(--panel); border-radius: var(--radius); overflow: hidden; }
+  #player.open { display: block; }
+  #playerBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; }
+  #playerTitle { font-size: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #playerBar .btn { padding: 14px 22px; font-size: 18px; }
+  #frameWrap { position: relative; width: 100%; background: #000; }
+  #frameWrap.video { aspect-ratio: 16 / 9; max-height: 70vh; }
+  #frameWrap.audio { height: 352px; }
+  #frameWrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  #parkLock {
+    position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 24px; text-align: center; background: #000; font-size: 26px; font-weight: 600;
+  }
+  #parkLock.show { display: flex; }
+  #parkLock small { font-size: 18px; font-weight: 400; color: var(--muted); }
 
   nav { display: flex; gap: 12px; margin: 24px 0; }
   nav button {
@@ -49,6 +81,7 @@
   }
   .tile .name { font-size: 24px; font-weight: 700; }
   .tile .kind { font-size: 16px; color: var(--muted); margin-top: 4px; }
+  .tile .kind.here { color: var(--accent); }
   .tile .fav {
     position: absolute; top: 14px; right: 14px; width: 60px; height: 60px;
     border: 0; border-radius: 50%; background: transparent; color: var(--muted);
@@ -59,6 +92,8 @@
   @media (max-width: 600px) {
     body { padding: 16px 16px 32px; }
     h1, #clock { font-size: 26px; }
+    #playForm { flex-direction: column; }
+    #playInput, #playForm button { font-size: 18px; padding: 16px; }
     nav button { font-size: 20px; padding: 18px; }
     .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .tile a { height: 130px; padding: 14px; }
@@ -73,6 +108,27 @@
   <div id="clock"></div>
 </header>
 
+<form id="playForm" autocomplete="off">
+  <input id="playInput" type="text" inputmode="url"
+         placeholder="Paste a YouTube, Twitch, Spotify or SoundCloud link to play it here">
+  <button type="submit">Play here</button>
+</form>
+<p id="playError" role="alert"></p>
+
+<section id="player" aria-label="Player">
+  <div id="playerBar">
+    <span id="playerTitle"></span>
+    <button class="btn secondary" id="closePlayer" type="button">✕ Close</button>
+  </div>
+  <div id="frameWrap">
+    <div id="parkLock">
+      🅿️ Video plays only when parked
+      <small>It paused because the car is moving. Audio from Spotify and SoundCloud keeps working.</small>
+      <button class="btn" id="resumeBtn" type="button" disabled>Resume</button>
+    </div>
+  </div>
+</section>
+
 <nav role="tablist">
   <button role="tab" data-tab="listen">🎧 Listen</button>
   <button role="tab" data-tab="watch">📺 Watch</button>
@@ -82,9 +138,11 @@
 <div class="grid" id="grid"></div>
 
 <script>
-  // kind: "listen" = audio, fine while driving; "watch" = video, Tesla only plays it in Park.
+  // kind: "listen" = audio, fine while driving; "watch" = video, park only.
+  // embed: the service allows its player inside another page, so it plays here instead of opening a new tab.
   const SERVICES = [
-    { id: "spotify",    name: "Spotify",        kind: "listen", url: "https://open.spotify.com",            color: "#1db954", text: "#000" },
+    { id: "spotify",    name: "Spotify",        kind: "listen", url: "https://open.spotify.com",            color: "#1db954", text: "#000", embed: "Spotify" },
+    { id: "soundcloud", name: "SoundCloud",     kind: "listen", url: "https://soundcloud.com",              color: "#ff5500", embed: "SoundCloud" },
     { id: "ytmusic",    name: "YouTube Music",  kind: "listen", url: "https://music.youtube.com",           color: "#ff0000" },
     { id: "applemusic", name: "Apple Music",    kind: "listen", url: "https://music.apple.com",             color: "#fa2d48" },
     { id: "amzmusic",   name: "Amazon Music",   kind: "listen", url: "https://music.amazon.com",            color: "#25d1da", text: "#000" },
@@ -94,8 +152,9 @@
     { id: "iheart",     name: "iHeartRadio",    kind: "listen", url: "https://www.iheart.com",              color: "#c6002b" },
     { id: "audible",    name: "Audible",        kind: "listen", url: "https://www.audible.com/library",     color: "#f8991c", text: "#000" },
     { id: "pocketcasts",name: "Pocket Casts",   kind: "listen", url: "https://play.pocketcasts.com",        color: "#f43e37" },
-    { id: "soundcloud", name: "SoundCloud",     kind: "listen", url: "https://soundcloud.com",              color: "#ff5500" },
 
+    { id: "youtube",    name: "YouTube",        kind: "watch",  url: "https://www.youtube.com",             color: "#ff0000", embed: "YouTube" },
+    { id: "twitch",     name: "Twitch",         kind: "watch",  url: "https://www.twitch.tv",               color: "#9146ff", embed: "Twitch" },
     { id: "netflix",    name: "Netflix",        kind: "watch",  url: "https://www.netflix.com",             color: "#e50914" },
     { id: "disney",     name: "Disney+",        kind: "watch",  url: "https://www.disneyplus.com",          color: "#113ccf" },
     { id: "hulu",       name: "Hulu",           kind: "watch",  url: "https://www.hulu.com",                color: "#1ce783", text: "#000" },
@@ -104,13 +163,11 @@
     { id: "peacock",    name: "Peacock",        kind: "watch",  url: "https://www.peacocktv.com",           color: "#f4c430", text: "#000" },
     { id: "paramount",  name: "Paramount+",     kind: "watch",  url: "https://www.paramountplus.com",       color: "#0064ff" },
     { id: "appletv",    name: "Apple TV+",      kind: "watch",  url: "https://tv.apple.com",                color: "#555" },
-    { id: "youtube",    name: "YouTube",        kind: "watch",  url: "https://www.youtube.com",             color: "#ff0000" },
     { id: "youtubetv",  name: "YouTube TV",     kind: "watch",  url: "https://tv.youtube.com",              color: "#cc0000" },
     { id: "tubi",       name: "Tubi",           kind: "watch",  url: "https://tubitv.com",                  color: "#7408ff" },
     { id: "pluto",      name: "Pluto TV",       kind: "watch",  url: "https://pluto.tv",                    color: "#fff200", text: "#000" },
     { id: "roku",       name: "Roku Channel",   kind: "watch",  url: "https://therokuchannel.roku.com",     color: "#6c3c97" },
     { id: "crunchyroll",name: "Crunchyroll",    kind: "watch",  url: "https://www.crunchyroll.com",         color: "#f47521" },
-    { id: "twitch",     name: "Twitch",         kind: "watch",  url: "https://www.twitch.tv",               color: "#9146ff" },
     { id: "espn",       name: "ESPN",           kind: "watch",  url: "https://www.espn.com/watch",          color: "#d00" },
     { id: "fubo",       name: "Fubo",           kind: "watch",  url: "https://www.fubo.tv",                 color: "#fa4616" },
     { id: "sling",      name: "Sling TV",       kind: "watch",  url: "https://watch.sling.com",             color: "#0b8bd9" },
@@ -118,8 +175,8 @@
   ];
 
   const NOTES = {
-    listen: "Audio apps — fine to use while driving. Use the steering wheel buttons to skip and pause.",
-    watch:  "Video apps — Tesla only plays video while in Park. Great for charging stops.",
+    listen: "Spotify and SoundCloud play right here. The others open in a new tab so TeslaHub stays open.",
+    watch:  "YouTube and Twitch play right here, only when parked. Netflix, Disney+ and the rest block playing inside other sites, so they open in a new tab.",
   };
 
   // Per-device conveniences only; the page works fine if storage is unavailable.
@@ -131,22 +188,145 @@
   let tab = store.get("tab", "listen");
   let favs = new Set(store.get("favs", []));
 
-  const grid = document.getElementById("grid");
-  const note = document.getElementById("note");
+  const $ = id => document.getElementById(id);
+  const grid = $("grid");
   const tabs = document.querySelectorAll("nav button");
+
+  // ---------- Link → embeddable player ----------
+
+  function toEmbed(raw) {
+    let u;
+    try { u = new URL(raw.trim().match(/^https?:\/\//) ? raw.trim() : "https://" + raw.trim()); }
+    catch { return null; }
+    const host = u.hostname.replace(/^(www|m|music)\./, "");
+    const parts = u.pathname.split("/").filter(Boolean);
+
+    if (host === "youtu.be" || host === "youtube.com" || host === "youtube-nocookie.com") {
+      const list = u.searchParams.get("list");
+      let id = host === "youtu.be" ? parts[0] : u.searchParams.get("v");
+      if (!id && ["shorts", "live", "embed"].includes(parts[0])) id = parts[1];
+      const base = "https://www.youtube-nocookie.com/embed/";
+      if (id)   return { kind: "video", label: "YouTube", src: `${base}${id}?autoplay=1${list ? "&list=" + list : ""}` };
+      if (list) return { kind: "video", label: "YouTube playlist", src: `${base}videoseries?autoplay=1&list=${list}` };
+      return null;
+    }
+
+    if (host === "twitch.tv") {
+      const parent = location.hostname || "localhost";
+      if (parts[0] === "videos" && parts[1])
+        return { kind: "video", label: "Twitch video", src: `https://player.twitch.tv/?video=v${parts[1]}&parent=${parent}` };
+      if (parts[0])
+        return { kind: "video", label: `Twitch · ${parts[0]}`, src: `https://player.twitch.tv/?channel=${parts[0]}&parent=${parent}` };
+      return null;
+    }
+
+    if (host === "open.spotify.com") {
+      const p = parts[0]?.startsWith("intl-") ? parts.slice(1) : parts;
+      if (["track", "album", "playlist", "episode", "show", "artist"].includes(p[0]) && p[1])
+        return { kind: "audio", label: `Spotify ${p[0]}`, src: `https://open.spotify.com/embed/${p[0]}/${p[1]}` };
+      return null;
+    }
+
+    if (host === "soundcloud.com" && parts.length)
+      return { kind: "audio", label: "SoundCloud",
+               src: `https://w.soundcloud.com/player/?url=${encodeURIComponent(u.origin + u.pathname)}&auto_play=true&visual=true` };
+
+    return null;
+  }
+
+  // ---------- Player ----------
+
+  let current = null;   // the embed now loaded
+  let frame = null;
+
+  function loadFrame() {
+    frame?.remove();
+    frame = document.createElement("iframe");
+    frame.src = current.src;
+    frame.allow = "autoplay; encrypted-media; fullscreen; picture-in-picture";
+    frame.allowFullscreen = true;
+    $("frameWrap").prepend(frame);
+  }
+
+  function play(raw) {
+    const embed = toEmbed(raw);
+    if (!embed) {
+      $("playError").textContent = "That link can't play here. Paste a YouTube, Twitch, Spotify or SoundCloud link.";
+      return;
+    }
+    $("playError").textContent = "";
+    current = embed;
+    $("playerTitle").textContent = embed.label;
+    $("frameWrap").className = embed.kind;
+    $("player").classList.add("open");
+    hideLock();
+    if (embed.kind === "video" && moving) return showLock();
+    loadFrame();
+    if (embed.kind === "video") watchSpeed();
+    $("player").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function closePlayer() {
+    frame?.remove();
+    frame = null;
+    current = null;
+    hideLock();
+    $("player").classList.remove("open");
+  }
+
+  // ---------- Park-only lock for video ----------
+  // Uses the device's GPS speed. On a computer at home there is no speed, so video just plays.
+
+  const MOVING_MPS = 2.2;   // about 5 mph
+  let moving = false;
+  let watchId = null;
+
+  function watchSpeed() {
+    if (watchId !== null || !navigator.geolocation) return;
+    watchId = navigator.geolocation.watchPosition(pos => {
+      const speed = pos.coords.speed;
+      moving = speed !== null && speed > MOVING_MPS;
+      if (current?.kind !== "video") return;
+      if (moving) showLock();
+      else $("resumeBtn").disabled = false;
+    }, () => {}, { enableHighAccuracy: true });
+  }
+
+  function showLock() {
+    frame?.remove();
+    frame = null;
+    $("resumeBtn").disabled = true;
+    $("parkLock").classList.add("show");
+  }
+
+  function hideLock() { $("parkLock").classList.remove("show"); }
+
+  $("resumeBtn").addEventListener("click", () => {
+    if (moving) return;
+    hideLock();
+    loadFrame();
+  });
+
+  $("playForm").addEventListener("submit", e => {
+    e.preventDefault();
+    play($("playInput").value);
+  });
+  $("closePlayer").addEventListener("click", closePlayer);
+
+  // ---------- Tiles ----------
 
   function render() {
     tabs.forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
-    note.textContent = NOTES[tab];
+    $("note").textContent = NOTES[tab];
 
     const list = SERVICES.filter(s => s.kind === tab)
       .sort((a, b) => favs.has(b.id) - favs.has(a.id));
 
     grid.innerHTML = list.map(s => `
       <div class="tile" style="--brand:${s.color}; --brand-text:${s.text || "#fff"}">
-        <a href="${s.url}">
+        <a href="${s.url}" ${s.embed ? `data-embed="${s.embed}"` : `target="_blank" rel="noopener"`}>
           <span class="name">${s.name}</span>
-          <span class="kind">${s.kind === "listen" ? "Audio" : "Video · Park only"}</span>
+          <span class="kind ${s.embed ? "here" : ""}">${s.embed ? "▶ Plays here" : "Opens in new tab"}</span>
         </a>
         <span class="badge">${s.name[0]}</span>
         <button class="fav" data-id="${s.id}" aria-pressed="${favs.has(s.id)}"
@@ -161,17 +341,27 @@
   }));
 
   grid.addEventListener("click", e => {
-    const btn = e.target.closest(".fav");
-    if (!btn) return;
-    const id = btn.dataset.id;
-    favs.has(id) ? favs.delete(id) : favs.add(id);
-    store.set("favs", [...favs]);
-    render();
+    const fav = e.target.closest(".fav");
+    if (fav) {
+      const id = fav.dataset.id;
+      favs.has(id) ? favs.delete(id) : favs.add(id);
+      store.set("favs", [...favs]);
+      render();
+      return;
+    }
+    // Embeddable services: ask for a link instead of leaving the page.
+    const link = e.target.closest("a[data-embed]");
+    if (link) {
+      e.preventDefault();
+      const input = $("playInput");
+      input.placeholder = `Paste a ${link.dataset.embed} link to play it here`;
+      input.focus();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   });
 
   function tick() {
-    document.getElementById("clock").textContent =
-      new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    $("clock").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
   tick();
   setInterval(tick, 10000);
